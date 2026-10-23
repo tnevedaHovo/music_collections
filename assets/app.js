@@ -32,14 +32,185 @@
       }
     }));
 
+  // ── Leitor: excertos do Deezer (<audio>) e faixas completas do YouTube ──
+  // Cada item da fila: { kind: 'audio'|'yt', src, title, sub, cover, album, index }
+  const player = (() => {
+    const root = document.querySelector('[data-player]');
+    if (!root) return null;
+    const $ = (s) => root.querySelector(s);
+    const audio = root.querySelector('audio');
+    const videoBox = $('.player-video');
+    const seek = $('[data-player-seek]');
+    let queue = [], pos = -1, yt = null, ytLoading = null, ytTimer = null;
+
+    const clock = (s) => {
+      s = Math.max(0, Math.floor(s || 0));
+      return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+    };
+    const current = () => queue[pos];
+    const isYt = () => current()?.kind === 'yt';
+    const playing = () => (isYt() ? yt?.getPlayerState?.() === 1 : !audio.paused);
+
+    function render(time, duration) {
+      $('[data-player-time]').textContent = clock(time);
+      $('[data-player-duration]').textContent = clock(duration);
+      if (document.activeElement !== seek) seek.value = duration ? Math.round((time / duration) * 1000) : 0;
+    }
+    function updateToggle() {
+      const btn = $('[data-player-toggle]');
+      btn.textContent = playing() ? '⏸' : '▶';
+      btn.title = playing() ? 'Pausa' : 'Reproduzir';
+    }
+    // Marca a faixa e o disco que estão a tocar (no alinhamento e nas capas).
+    function highlight() {
+      document.querySelectorAll('.track.playing, .card.playing').forEach((el) => el.classList.remove('playing'));
+      const it = current();
+      if (!it) return;
+      document.querySelectorAll(`[data-play-album="${it.album}"]`).forEach((b) => b.closest('.card')?.classList.add('playing'));
+      const section = document.querySelector(`[data-tracklist="${it.album}"]`);
+      if (section && it.index !== null) section.querySelector(`.track[data-index="${it.index}"]`)?.classList.add('playing');
+    }
+
+    // A API do YouTube só é carregada na primeira vez que é precisa.
+    function youtube() {
+      ytLoading ??= new Promise((resolve) => {
+        window.onYouTubeIframeAPIReady = () => {
+          yt = new YT.Player('yt-player', {
+            width: 256, height: 144,
+            host: 'https://www.youtube-nocookie.com',
+            playerVars: { autoplay: 1, playsinline: 1, rel: 0 },
+            events: {
+              onReady: () => resolve(yt),
+              onStateChange: (e) => { if (e.data === YT.PlayerState.ENDED) next(); updateToggle(); },
+              // Vídeo removido ou sem autorização para ser embutido: passa ao seguinte.
+              onError: () => { $('.player-sub').textContent = 'Vídeo indisponível no YouTube.'; setTimeout(next, 1500); },
+            },
+          });
+        };
+        const s = document.createElement('script');
+        s.src = 'https://www.youtube.com/iframe_api';
+        document.head.append(s);
+      });
+      return ytLoading;
+    }
+
+    async function playAt(i) {
+      if (i < 0 || i >= queue.length) return;
+      pos = i;
+      const it = current();
+      root.hidden = false;
+      document.body.classList.add('has-player');
+      $('.player-title').textContent = it.title;
+      $('.player-sub').textContent = it.sub;
+      const cover = $('.player-cover');
+      cover.hidden = !it.cover;
+      if (it.cover) cover.src = it.cover;
+      $('[data-player-source]').textContent = it.kind === 'yt' ? 'YouTube' : 'Excerto 30 s · Deezer';
+      render(0, it.kind === 'yt' ? 0 : 30);
+      highlight();
+
+      clearInterval(ytTimer);
+      if (it.kind === 'yt') {
+        audio.pause();
+        videoBox.hidden = false;
+        root.classList.add('is-video');
+        const p = await youtube();
+        if (current() !== it) return; // entretanto mudou de faixa
+        p.loadVideoById(it.src);
+        ytTimer = setInterval(() => { if (yt.getDuration) render(yt.getCurrentTime(), yt.getDuration()); }, 500);
+      } else {
+        yt?.pauseVideo?.();
+        videoBox.hidden = true;
+        root.classList.remove('is-video');
+        audio.src = it.src;
+        audio.play().catch(() => updateToggle());
+      }
+      updateToggle();
+    }
+    function next() {
+      if (pos < queue.length - 1) playAt(pos + 1);
+      else updateToggle();
+    }
+    function prev() {
+      const t = isYt() ? yt?.getCurrentTime?.() ?? 0 : audio.currentTime;
+      if (t > 3 || pos === 0) {
+        if (isYt()) yt.seekTo(0, true); else audio.currentTime = 0;
+      } else {
+        playAt(pos - 1);
+      }
+    }
+    function close() {
+      audio.pause();
+      yt?.stopVideo?.();
+      clearInterval(ytTimer);
+      queue = [];
+      pos = -1;
+      root.hidden = true;
+      document.body.classList.remove('has-player');
+      highlight();
+    }
+
+    audio.addEventListener('timeupdate', () => render(audio.currentTime, audio.duration || 30));
+    audio.addEventListener('play', updateToggle);
+    audio.addEventListener('pause', updateToggle);
+    audio.addEventListener('ended', next);
+    audio.addEventListener('error', () => { if (audio.src && !isYt()) setTimeout(next, 1000); });
+    $('[data-player-next]').addEventListener('click', next);
+    $('[data-player-prev]').addEventListener('click', prev);
+    $('[data-player-close]').addEventListener('click', close);
+    $('[data-player-toggle]').addEventListener('click', () => {
+      if (isYt()) playing() ? yt.pauseVideo() : yt.playVideo();
+      else audio.paused ? audio.play() : audio.pause();
+      setTimeout(updateToggle, 150);
+    });
+    seek.addEventListener('input', () => {
+      const f = seek.value / 1000;
+      if (isYt()) yt?.seekTo?.(f * yt.getDuration(), true);
+      else if (audio.duration) audio.currentTime = f * audio.duration;
+    });
+
+    return { play: (items, start = 0) => { queue = items; playAt(start); }, highlight };
+  })();
+
+  // Fila de excertos a partir da resposta de album_audio.
+  const deezerQueue = (r, albumId) => r.tracks.map((t) => ({
+    kind: 'audio', src: t.preview, title: t.title,
+    sub: `${r.album.artist} — ${r.album.title}`, cover: r.album.cover, album: String(albumId), index: t.index,
+  }));
+
+  // ▶ nas capas das grelhas: toca os excertos do disco sem sair da página.
+  document.addEventListener('click', async (ev) => {
+    const btn = ev.target.closest('[data-play-album]');
+    if (!btn || !player) return;
+    ev.preventDefault();
+    btn.classList.add('loading');
+    try {
+      const r = await api('album_audio', { id: btn.dataset.playAlbum });
+      if (!r.found || !r.tracks.length) {
+        btn.classList.add('card-play-none');
+        btn.title = 'Este disco não foi encontrado no Deezer';
+        btn.textContent = '–';
+        return;
+      }
+      player.play(deezerQueue(r, btn.dataset.playAlbum));
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      btn.classList.remove('loading');
+    }
+  });
+
   // ── Alinhamento do disco: pedido ao Discogs se ainda não estiver em cache ──
   const tracklist = document.querySelector('[data-tracklist]');
+  let albumAudio = null;
+
   async function loadTracklist() {
     const status = tracklist.querySelector('.tracklist-status');
     try {
       const r = await api('tracklist', { id: tracklist.dataset.tracklist });
       tracklist.innerHTML = r.html;
       tracklist.dataset.loaded = '1';
+      setupListening();
     } catch (e) {
       if (status) {
         status.textContent = 'Não foi possível obter o alinhamento: ' + e.message;
@@ -49,7 +220,76 @@
       }
     }
   }
-  if (tracklist && tracklist.dataset.loaded === '0') loadTracklist();
+
+  // Procura o disco no Deezer e mostra ▶ nas faixas que têm excerto.
+  async function setupListening(retry = false) {
+    const status = tracklist.querySelector('.listen-status');
+    if (!status) return; // sem alinhamento
+    albumAudio = null;
+    try {
+      const r = await api('album_audio', { id: tracklist.dataset.tracklist, ...(retry ? { retry: 1 } : {}) });
+      if (!r.found || !r.tracks.length) {
+        status.innerHTML = 'Não encontrado no Deezer. <button type="button" class="link-btn" data-deezer-retry>Procurar de novo</button>';
+        return;
+      }
+      albumAudio = r;
+      r.tracks.forEach((t, n) => {
+        if (t.index === null) return;
+        const row = tracklist.querySelector(`.track[data-index="${t.index}"]`);
+        if (!row) return;
+        row.dataset.deezer = n;
+        row.querySelector('[data-play-track]').hidden = false;
+      });
+      const matched = r.tracks.filter((t) => t.index !== null).length;
+      status.textContent = matched === r.tracks.length ? '' : `${matched} de ${r.tracks.length} faixas do Deezer associadas ao alinhamento.`;
+      tracklist.querySelector('[data-play-all="deezer"]').disabled = false;
+      const link = tracklist.querySelector('[data-deezer-link]');
+      link.href = r.link;
+      link.hidden = false;
+      player?.highlight();
+    } catch (e) {
+      status.textContent = 'Deezer indisponível: ' + e.message;
+    }
+  }
+
+  const ytQueue = () => {
+    const sub = `${tracklist.dataset.albumArtist} — ${tracklist.dataset.albumTitle}`;
+    return [...tracklist.querySelectorAll('.track[data-yt]')].map((row) => ({
+      kind: 'yt', src: row.dataset.yt, title: row.dataset.title, sub,
+      cover: tracklist.dataset.cover, album: tracklist.dataset.tracklist, index: Number(row.dataset.index),
+    }));
+  };
+
+  if (tracklist) {
+    if (tracklist.dataset.loaded === '0') loadTracklist();
+    else setupListening();
+
+    // Delegação: o conteúdo do alinhamento é substituído quando se atualiza.
+    tracklist.addEventListener('click', (ev) => {
+      if (!player) return;
+      const id = tracklist.dataset.tracklist;
+      const row = ev.target.closest('.track');
+      if (ev.target.closest('[data-deezer-retry]')) {
+        tracklist.querySelector('.listen-status').textContent = 'A procurar no Deezer…';
+        setupListening(true);
+      } else if (ev.target.closest('[data-play-all="deezer"]') && albumAudio) {
+        player.play(deezerQueue(albumAudio, id));
+      } else if (ev.target.closest('[data-play-all="yt"]')) {
+        const q = ytQueue();
+        if (q.length) player.play(q);
+        else tracklist.querySelector('[data-video]')?.click();
+      } else if (ev.target.closest('[data-play-track]') && row && albumAudio) {
+        player.play(deezerQueue(albumAudio, id), Number(row.dataset.deezer));
+      } else if (ev.target.closest('[data-play-yt]') && row) {
+        const q = ytQueue();
+        player.play(q, q.findIndex((it) => it.index === Number(row.dataset.index)));
+      } else if (ev.target.closest('[data-video]')) {
+        const b = ev.target.closest('[data-video]');
+        player.play([{ kind: 'yt', src: b.dataset.video, title: b.dataset.title, sub: tracklist.dataset.albumArtist,
+          cover: tracklist.dataset.cover, album: id, index: null }]);
+      }
+    });
+  }
   document.querySelector('[data-tracklist-refresh]')?.addEventListener('click', async (ev) => {
     const btn = ev.currentTarget;
     btn.disabled = true;
@@ -108,7 +348,7 @@
   // Marcação rápida (interessa-me / vou / bilhete) diretamente na agenda.
   document.querySelectorAll('[data-concert-status]').forEach((sel) =>
     sel.addEventListener('change', async () => {
-      const gig = sel.closest('.gig');
+      const gig = sel.closest('.gig, .gig-card');
       try {
         await api('concert_status', { id: sel.dataset.concertStatus, status: sel.value });
         gig?.classList.toggle('gig-mine', sel.value !== '');
@@ -121,8 +361,16 @@
     document.querySelectorAll('[data-concert-counts] [data-k]').forEach((td) =>
       (td.textContent = fmt.format(counts[td.dataset.k] ?? 0)));
   }
-  const concertButtons = () => document.querySelectorAll('[data-concerts], [data-area] button');
-  const setBusy = (on) => concertButtons().forEach((b) => (b.disabled = on));
+  const concertButtons = () => document.querySelectorAll('[data-concerts], [data-area] button, [data-bol]');
+  // Ao terminar, cada botão volta ao estado anterior (os da Ticketmaster podem estar desativados por falta de chave).
+  const setBusy = (on) => concertButtons().forEach((b) => {
+    if (on) {
+      b.dataset.wasDisabled = b.disabled ? '1' : '';
+      b.disabled = true;
+    } else {
+      b.disabled = b.dataset.wasDisabled === '1';
+    }
+  });
 
   async function syncConcerts() {
     const p = panel('sync-concerts');
@@ -154,6 +402,24 @@
       if (scope !== 'step') renderConcertCounts(await api('concerts_reset', { scope }));
       await syncConcerts();
     }));
+
+  document.querySelector('[data-bol]')?.addEventListener('click', async () => {
+    const p = panel('sync-bol');
+    const only = document.querySelector('[data-bol-only]').checked;
+    setBusy(true);
+    p.progress(null);
+    p.status('A ler a agenda de música da BOL (pode demorar uns segundos)…');
+    try {
+      const r = await api('concerts_bol', only ? { only: 1 } : {});
+      p.status(`Concluído: ${fmt.format(r.total)} eventos na BOL, ${fmt.format(r.collection)} de artistas da tua coleção`
+        + (only ? '' : ` · ${fmt.format(r.imported)} importados`) + `. ${fmt.format(r.counts.concerts)} concertos por vir na agenda.`);
+      renderConcertCounts(r.counts);
+    } catch (e) {
+      p.status(e.message, true);
+    } finally {
+      setBusy(false);
+    }
+  });
 
   document.querySelector('[data-area]')?.addEventListener('submit', async (ev) => {
     ev.preventDefault();

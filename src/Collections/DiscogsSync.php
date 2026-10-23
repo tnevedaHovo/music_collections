@@ -100,6 +100,9 @@ final class DiscogsSync
                 lf_status = CASE WHEN releases.title <> excluded.title OR releases.main_artist <> excluded.main_artist
                                  THEN NULL ELSE releases.lf_status END,
                 tracklist = CASE WHEN releases.release_id <> excluded.release_id THEN NULL ELSE releases.tracklist END,
+                videos = CASE WHEN releases.release_id <> excluded.release_id THEN NULL ELSE releases.videos END,
+                deezer_id = CASE WHEN releases.title <> excluded.title OR releases.main_artist <> excluded.main_artist
+                                 THEN NULL ELSE releases.deezer_id END,
                 title = excluded.title, artist = excluded.artist, main_artist = excluded.main_artist, year = excluded.year,
                 format_name = excluded.format_name, formats = excluded.formats, labels = excluded.labels,
                 catno = excluded.catno, genres = excluded.genres, styles = excluded.styles, thumb = excluded.thumb,

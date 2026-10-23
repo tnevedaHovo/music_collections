@@ -81,9 +81,12 @@ $tags = json_list($a['lf_tags']);
         <?php endif; ?>
 
         <?php // Sem cache, o alinhamento é pedido ao Discogs depois de a página abrir (ver app.js). ?>
-        <section class="section tracklist-section" data-tracklist="<?= (int) $a['instance_id'] ?>" data-loaded="<?= $a['tracklist'] !== null ? '1' : '0' ?>">
-            <?php if ($a['tracklist'] !== null): ?>
-                <?= View::partial('collections/tracklist', ['tracks' => json_list($a['tracklist']), 'fetchedAt' => $a['tracklist_at']]) ?>
+        <?php // Discos com alinhamento de antes dos vídeos (videos NULL) voltam a ser lidos uma vez. ?>
+        <?php $cached = $a['tracklist'] !== null && $a['videos'] !== null; ?>
+        <section class="section tracklist-section" data-tracklist="<?= (int) $a['instance_id'] ?>" data-loaded="<?= $cached ? '1' : '0' ?>"
+                 data-album-title="<?= h($a['title']) ?>" data-album-artist="<?= h($a['artist']) ?>" data-cover="<?= h($a['thumb'] ?: $a['cover']) ?>">
+            <?php if ($cached): ?>
+                <?= View::partial('collections/tracklist', ['tracks' => json_list($a['tracklist']), 'videos' => json_list($a['videos']), 'fetchedAt' => $a['tracklist_at']]) ?>
             <?php else: ?>
                 <div class="section-head"><h2>Alinhamento</h2></div>
                 <p class="muted tracklist-status">A obter o alinhamento do Discogs…</p>

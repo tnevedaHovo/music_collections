@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace App\Concerts;
 
+use App\Collections\Names;
 use App\Core\ApiException;
 use App\Core\Http;
 use App\Core\Settings;
@@ -109,6 +110,7 @@ final class TicketmasterClient
             'image' => self::image($e['images'] ?? []),
             'price' => $price,
             'event_status' => $e['dates']['status']['code'] ?? null,
+            'genre' => ($g = $e['classifications'][0]['genre']['name'] ?? null) && $g !== 'Undefined' ? $g : null,
         ];
     }
 
@@ -130,15 +132,10 @@ final class TicketmasterClient
         return number_format($v, fmod($v, 1.0) === 0.0 ? 0 : 2, ',', "\u{202F}");
     }
 
-    /** Chave de comparação de nomes: sem acentos, maiúsculas, "The " nem pontuação. */
+    /** Chave de comparação de nomes (ver Names::key). */
     public static function key(string $name): string
     {
-        $s = mb_strtolower(trim($name));
-        $s = strtr($s, ['á' => 'a', 'à' => 'a', 'â' => 'a', 'ã' => 'a', 'ä' => 'a', 'é' => 'e', 'è' => 'e', 'ê' => 'e', 'ë' => 'e',
-            'í' => 'i', 'ì' => 'i', 'î' => 'i', 'ï' => 'i', 'ó' => 'o', 'ò' => 'o', 'ô' => 'o', 'õ' => 'o', 'ö' => 'o',
-            'ú' => 'u', 'ù' => 'u', 'û' => 'u', 'ü' => 'u', 'ç' => 'c', 'ñ' => 'n', '&' => 'and', '+' => 'and']);
-        $s = preg_replace('/^the\s+/u', '', $s) ?? $s;
-        return preg_replace('/[^\p{L}\p{N}]+/u', '', $s) ?? $s;
+        return Names::key($name);
     }
 
     private function get(string $path, array $query): array

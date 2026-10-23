@@ -26,6 +26,7 @@ $showTitle = $c['title'] && mb_strtolower($c['title']) !== mb_strtolower($c['art
         <div class="gig-meta">
             <?= $c['time'] ? h($c['time']) . ' · ' : '' ?><?= h($place ?: 'Local por anunciar') ?>
             <?= $c['price'] ? ' · ' . h($c['price']) : '' ?>
+            <?php if ($c['genre']): ?><span class="chip chip-muted chip-tiny"><?= h($c['genre']) ?></span><?php endif; ?>
         </div>
         <?php if ($c['notes']): ?><div class="gig-notes"><?= h($c['notes']) ?></div><?php endif; ?>
     </div>
@@ -40,7 +41,9 @@ $showTitle = $c['title'] && mb_strtolower($c['title']) !== mb_strtolower($c['art
             <?php endforeach; ?>
         </select>
         <div class="gig-links">
-            <?php if ($c['url']): ?><a href="<?= h($c['url']) ?>" target="_blank" rel="noopener">Bilhetes</a><?php endif; ?>
+            <?php if ($c['url']): ?>
+                <a href="<?= h($c['url']) ?>" target="_blank" rel="noopener"><?= $c['source'] === 'manual' ? 'Bilhetes' : 'Bilhetes · ' . h(ConcertRepository::SOURCES[$c['source']] ?? $c['source']) ?></a>
+            <?php endif; ?>
             <a href="<?= url('concerts/edit', ['id' => $c['id']]) ?>">Editar</a>
         </div>
     </div>

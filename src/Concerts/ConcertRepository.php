@@ -24,20 +24,57 @@ final class ConcertRepository
     ];
 
     /** Campos que o formulário edita; os da fonte marcam o registo como editado. */
-    public const SOURCE_FIELDS = ['artist', 'title', 'lineup', 'date', 'time', 'venue', 'city', 'country', 'url', 'price', 'event_status'];
+    public const SOURCE_FIELDS = ['artist', 'title', 'lineup', 'date', 'time', 'venue', 'city', 'country', 'url', 'price', 'event_status', 'genre'];
+
+    public const SOURCES = ['manual' => 'Adicionado à mão', 'ticketmaster' => 'Ticketmaster', 'bol' => 'BOL'];
     public const PERSONAL_FIELDS = ['my_status', 'notes'];
 
     /** @return array{rows:array, total:int} */
     public static function list(array $f, int $page, int $perPage = 50): array
     {
-        $where = ['c.hidden = 0'];
-        $params = [];
+        [$where, $params] = self::where($f);
         $past = ($f['when'] ?? '') === 'past';
         $where[] = match ($f['when'] ?? '') {
             'past' => "c.date < date('now', 'localtime')",
             'all' => '1 = 1',
             default => "c.date >= date('now', 'localtime')",
         };
+
+        $sql = ' FROM concerts c WHERE ' . implode(' AND ', $where);
+        $order = $past ? 'c.date DESC, c.time DESC' : 'c.date ASC, c.time IS NULL, c.time ASC';
+        $offset = max(0, ($page - 1) * $perPage);
+
+        return [
+            'total' => (int) Db::value('SELECT COUNT(*)' . $sql, $params),
+            'rows' => Db::all('SELECT c.*' . $sql . " ORDER BY $order, c.artist COLLATE NOCASE LIMIT $perPage OFFSET $offset", $params),
+        ];
+    }
+
+    /**
+     * Concertos de um mês (vista de calendário), agrupados por dia. Usa os mesmos filtros
+     * que a lista, exceto "próximos/passados".
+     * @return array<string, list<array>> 'AAAA-MM-DD' => concertos
+     */
+    public static function month(array $f, string $ym): array
+    {
+        [$where, $params] = self::where($f);
+        $where[] = 'c.date BETWEEN :from AND :to';
+        $params['from'] = $ym . '-01';
+        $params['to'] = $ym . '-31';
+        $days = [];
+        $rows = Db::all('SELECT c.* FROM concerts c WHERE ' . implode(' AND ', $where)
+            . ' ORDER BY c.date, c.time IS NULL, c.time, c.artist COLLATE NOCASE', $params);
+        foreach ($rows as $r) {
+            $days[$r['date']][] = $r;
+        }
+        return $days;
+    }
+
+    /** Condições comuns a todas as vistas da agenda. @return array{0:list<string>, 1:array} */
+    private static function where(array $f): array
+    {
+        $where = ['c.hidden = 0'];
+        $params = [];
         if (($f['q'] ?? '') !== '') {
             $where[] = '(c.artist LIKE :q OR c.title LIKE :q OR c.lineup LIKE :q OR c.venue LIKE :q OR c.city LIKE :q)';
             $params['q'] = '%' . $f['q'] . '%';
@@ -50,21 +87,21 @@ final class ConcertRepository
             $where[] = 'c.city = :city';
             $params['city'] = $f['city'];
         }
+        if (($f['genre'] ?? '') !== '') {
+            $where[] = 'c.genre = :genre';
+            $params['genre'] = $f['genre'];
+        }
+        if (isset(self::SOURCES[$f['source'] ?? ''])) {
+            $where[] = 'c.source = :source';
+            $params['source'] = $f['source'];
+        }
         $where[] = match ($f['mine'] ?? '') {
             'any' => 'c.my_status IS NOT NULL',
             'interested', 'going', 'ticket' => 'c.my_status = ' . Db::pdo()->quote($f['mine']),
             'collection' => 'c.artist_id IS NOT NULL',
             default => '1 = 1',
         };
-
-        $sql = ' FROM concerts c WHERE ' . implode(' AND ', $where);
-        $order = $past ? 'c.date DESC, c.time DESC' : 'c.date ASC, c.time IS NULL, c.time ASC';
-        $offset = max(0, ($page - 1) * $perPage);
-
-        return [
-            'total' => (int) Db::value('SELECT COUNT(*)' . $sql, $params),
-            'rows' => Db::all('SELECT c.*' . $sql . " ORDER BY $order, c.artist COLLATE NOCASE LIMIT $perPage OFFSET $offset", $params),
-        ];
+        return [$where, $params];
     }
 
     public static function find(int $id): ?array
@@ -93,6 +130,8 @@ final class ConcertRepository
         return [
             'countries' => Db::all("SELECT country AS name, COUNT(*) AS n FROM concerts WHERE hidden = 0 AND country <> '' GROUP BY country ORDER BY n DESC"),
             'cities' => Db::all("SELECT city AS name, COUNT(*) AS n FROM concerts WHERE hidden = 0 AND city <> '' GROUP BY city ORDER BY n DESC LIMIT 80"),
+            'genres' => Db::all("SELECT genre AS name, COUNT(*) AS n FROM concerts WHERE hidden = 0 AND genre <> '' GROUP BY genre ORDER BY n DESC"),
+            'sources' => Db::all('SELECT source AS name, COUNT(*) AS n FROM concerts WHERE hidden = 0 GROUP BY source ORDER BY n DESC'),
         ];
     }
 
@@ -206,8 +245,8 @@ final class ConcertRepository
 
     public static function artistNames(): array
     {
-        return Db::all('SELECT DISTINCT a.name FROM artists a JOIN release_artists ra ON ra.artist_id = a.id
-                        WHERE a.id NOT IN (' . implode(',', Names::IGNORED_ARTISTS) . ') ORDER BY a.name COLLATE NOCASE');
+        return Db::all('SELECT a.id, a.name FROM artists a WHERE a.id IN (SELECT artist_id FROM release_artists)
+                        AND a.id NOT IN (' . implode(',', Names::IGNORED_ARTISTS) . ') ORDER BY a.name COLLATE NOCASE');
     }
 
     private static function isDate(string $s): bool

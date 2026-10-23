@@ -13,7 +13,7 @@ $imported = ($c['source'] ?? 'manual') !== 'manual';
         <h1><?= $id === null ? 'Novo concerto' : 'Editar concerto' ?></h1>
         <?php if ($imported): ?>
             <p class="muted">
-                Importado da Ticketmaster.
+                Importado da <?= h(ConcertRepository::SOURCES[$c['source']] ?? $c['source']) ?>.
                 <?= !empty($c['edited'])
                     ? 'Como já o alteraste, as sincronizações seguintes não lhe tocam.'
                     : 'Se alterares os dados do evento, deixa de ser atualizado pelas sincronizações (a tua marcação e notas nunca são alteradas).' ?>
@@ -79,6 +79,10 @@ $imported = ($c['source'] ?? 'manual') !== 'manual';
             <label>
                 <span>Preço</span>
                 <input name="price" value="<?= $v('price') ?>" placeholder="ex.: 25–40 €">
+            </label>
+            <label>
+                <span>Género</span>
+                <input name="genre" value="<?= $v('genre') ?>" placeholder="ex.: Rock, Jazz, Fado">
             </label>
             <label>
                 <span>Estado</span>

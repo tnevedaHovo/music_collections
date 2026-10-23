@@ -36,11 +36,32 @@ final class Names
         return $out !== '' ? $out : 'Desconhecido';
     }
 
+    /** Chave de comparação de nomes: sem acentos, maiúsculas, "The " nem pontuação. */
+    public static function key(string $name): string
+    {
+        $s = mb_strtolower(trim($name));
+        $s = strtr($s, ['á' => 'a', 'à' => 'a', 'â' => 'a', 'ã' => 'a', 'ä' => 'a', 'é' => 'e', 'è' => 'e', 'ê' => 'e', 'ë' => 'e',
+            'í' => 'i', 'ì' => 'i', 'î' => 'i', 'ï' => 'i', 'ó' => 'o', 'ò' => 'o', 'ô' => 'o', 'õ' => 'o', 'ö' => 'o',
+            'ú' => 'u', 'ù' => 'u', 'û' => 'u', 'ü' => 'u', 'ç' => 'c', 'ñ' => 'n', '&' => 'and', '+' => 'and']);
+        $s = preg_replace('/^the\s+/u', '', $s) ?? $s;
+        return preg_replace('/[^\p{L}\p{N}]+/u', '', $s) ?? $s;
+    }
+
+    /** Chave de um título de faixa, sem versões: "Airbag (Remastered) - 2017 Mix" → "airbag". */
+    public static function trackKey(string $title): string
+    {
+        $t = preg_replace('/\s*[\(\[][^\)\]]*[\)\]]/u', '', $title) ?? $title;
+        $t = preg_replace('/\s+-\s+.*\b(remaster\w*|version|mix|edit|live|mono|stereo|demo|bonus)\b.*$/iu', '', $t) ?? $t;
+        return self::key($t !== '' ? $t : $title);
+    }
+
     /** Variantes do título a tentar no Last.fm, da mais exata à mais solta. */
     public static function titleCandidates(string $title): array
     {
         $candidates = [trim($title)];
         $candidates[] = trim((string) preg_replace('/\s*[\(\[][^\)\]]*[\)\]]/u', '', $title));
+        // "God's Country - 2025 Reissue Black Vinyl" → "God's Country"
+        $candidates[] = trim((string) preg_replace('/\s+-\s+.*\b(reissue|vinyl|remaster\w*|edition|deluxe|anniversary|expanded)\b.*$/iu', '', $title));
         return array_values(array_unique(array_filter($candidates, static fn($t) => $t !== '')));
     }
 }

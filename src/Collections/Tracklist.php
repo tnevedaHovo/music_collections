@@ -12,17 +12,64 @@ final class Tracklist
     {
     }
 
-    /** Obtém e guarda o alinhamento de um disco da coleção. */
+    /**
+     * Obtém e guarda o alinhamento e os vídeos YouTube de um disco da coleção.
+     * @return array{tracks:array, videos:array}
+     */
     public function fetch(array $row): array
     {
         $release = $this->client->release((int) $row['release_id']);
         $tracks = self::normalize($release['tracklist'] ?? []);
-        Db::run('UPDATE releases SET tracklist = ?, tracklist_at = ? WHERE instance_id = ?', [
-            json_encode($tracks, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-            date('c'),
-            (int) $row['instance_id'],
+        $videos = self::videos($release['videos'] ?? []);
+        $json = static fn(array $v) => json_encode($v, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        Db::run('UPDATE releases SET tracklist = ?, videos = ?, tracklist_at = ? WHERE instance_id = ?', [
+            $json($tracks), $json($videos), date('c'), (int) $row['instance_id'],
         ]);
-        return $tracks;
+        return ['tracks' => $tracks, 'videos' => $videos];
+    }
+
+    /** Vídeos do Discogs → [['id' => id YouTube, 'title' => ...]] */
+    public static function videos(array $list): array
+    {
+        $out = [];
+        foreach ($list as $v) {
+            if (preg_match('~(?:youtube\.com/(?:watch\?(?:.*&)?v=|embed/|shorts/)|youtu\.be/)([\w-]{11})~', (string) ($v['uri'] ?? ''), $m)) {
+                $out[$m[1]] = ['id' => $m[1], 'title' => trim((string) ($v['title'] ?? ''))];
+            }
+        }
+        return array_values($out);
+    }
+
+    /**
+     * Associa vídeos às faixas pelo título ("Artista - Faixa (Official Video)" contém "Faixa").
+     * Acrescenta 'yt' (id do vídeo ou null) a cada faixa e devolve [faixas, vídeos sem faixa].
+     */
+    public static function attachVideos(array $tracks, array $videos): array
+    {
+        $keys = array_map(static fn($v) => Names::key($v['title']), $videos);
+        $used = [];
+        foreach ($tracks as $i => $t) {
+            $tracks[$i]['yt'] = null;
+            if ($t['kind'] === 'heading') {
+                continue;
+            }
+            $k = Names::trackKey($t['title']);
+            if (mb_strlen($k) < 3) {
+                continue;
+            }
+            // Entre os vídeos que contêm o título, o mais curto é o que menos coisa a mais tem.
+            $best = null;
+            foreach ($keys as $j => $vk) {
+                if (!isset($used[$j]) && str_contains($vk, $k) && ($best === null || strlen($vk) < strlen($keys[$best]))) {
+                    $best = $j;
+                }
+            }
+            if ($best !== null) {
+                $used[$best] = true;
+                $tracks[$i]['yt'] = $videos[$best]['id'];
+            }
+        }
+        return [$tracks, array_values(array_diff_key($videos, $used))];
     }
 
     /**

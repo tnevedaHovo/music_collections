@@ -120,5 +120,23 @@ final class Schema
                 SQL);
             $pdo->exec('PRAGMA user_version = 2');
         }
+
+        if ($version < 3) {
+            $pdo->exec(<<<'SQL'
+                -- Vídeos YouTube do Discogs (JSON [{id, title}]), obtidos com o alinhamento.
+                ALTER TABLE releases ADD COLUMN videos TEXT;
+                -- Álbum correspondente no Deezer: NULL = por procurar · 0 = não encontrado.
+                -- Os excertos não se guardam: os links expiram ao fim de algumas horas.
+                ALTER TABLE releases ADD COLUMN deezer_id INTEGER;
+                ALTER TABLE releases ADD COLUMN deezer_at TEXT;
+                SQL);
+            $pdo->exec('PRAGMA user_version = 3');
+        }
+
+        if ($version < 4) {
+            // Género do concerto (BOL: "Jazz", "Fado"…; Ticketmaster: "Rock"…), para filtrar a agenda.
+            $pdo->exec('ALTER TABLE concerts ADD COLUMN genre TEXT');
+            $pdo->exec('PRAGMA user_version = 4');
+        }
     }
 }

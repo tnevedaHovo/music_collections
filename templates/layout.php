@@ -57,6 +57,28 @@ $groups = [
         <?= $content ?>
     </main>
 </div>
+
+<div class="player" data-player hidden>
+    <div class="player-video" hidden><div id="yt-player"></div></div>
+    <img class="player-cover" alt="" referrerpolicy="no-referrer">
+    <div class="player-info">
+        <div class="player-title"></div>
+        <div class="player-sub"></div>
+    </div>
+    <div class="player-controls">
+        <button type="button" data-player-prev title="Anterior" aria-label="Faixa anterior">⏮</button>
+        <button type="button" data-player-toggle class="player-main" title="Pausa" aria-label="Reproduzir ou pausar">⏸</button>
+        <button type="button" data-player-next title="Seguinte" aria-label="Faixa seguinte">⏭</button>
+    </div>
+    <div class="player-progress">
+        <span data-player-time>0:00</span>
+        <input type="range" min="0" max="1000" value="0" data-player-seek aria-label="Posição">
+        <span data-player-duration>0:30</span>
+    </div>
+    <span class="player-source" data-player-source></span>
+    <button type="button" class="player-close" data-player-close title="Fechar" aria-label="Fechar leitor">✕</button>
+    <audio preload="none"></audio>
+</div>
 <script src="assets/app.js?v=<?= APP_VERSION ?>"></script>
 </body>
 </html>

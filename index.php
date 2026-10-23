@@ -99,12 +99,21 @@ switch ($route) {
         break;
 
     case 'concerts':
-        $filters = array_map('strval', array_intersect_key($_GET, array_flip(['q', 'when', 'country', 'city', 'mine'])));
+        $filters = array_map('strval', array_intersect_key($_GET, array_flip(['q', 'when', 'country', 'city', 'genre', 'source', 'mine'])));
+        // Vista: lista | cartões | calendário. A última escolhida fica na sessão.
+        $view = (string) ($_GET['view'] ?? $_SESSION['concert_view'] ?? 'list');
+        $view = in_array($view, ['list', 'cards', 'calendar'], true) ? $view : 'list';
+        $_SESSION['concert_view'] = $view;
+        $month = preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', (string) ($_GET['month'] ?? '')) ? $_GET['month'] : date('Y-m');
+        $perPage = $view === 'cards' ? 48 : 50;
         View::page('concerts/index', [
             'filters' => $filters,
-            'result' => ConcertRepository::list($filters, $page),
+            'view' => $view,
+            'month' => $month,
+            'days' => $view === 'calendar' ? ConcertRepository::month($filters, $month) : [],
+            'result' => $view === 'calendar' ? ['rows' => [], 'total' => 0] : ConcertRepository::list($filters, $page, $perPage),
             'page' => $page,
-            'perPage' => 50,
+            'perPage' => $perPage,
             'places' => ConcertRepository::places(),
             'totals' => ConcertRepository::totals(),
             'hasApi' => Settings::get('tm_api_key') !== '',

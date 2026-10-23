@@ -1,12 +1,14 @@
 <?php
 declare(strict_types=1);
 
+use App\Collections\DeezerClient;
 use App\Collections\DiscogsClient;
 use App\Collections\DiscogsSync;
 use App\Collections\LastFmClient;
 use App\Collections\LastFmSync;
 use App\Collections\Repository;
 use App\Collections\Tracklist;
+use App\Concerts\BolClient;
 use App\Concerts\ConcertRepository;
 use App\Concerts\ConcertSync;
 use App\Concerts\EventPage;
@@ -68,8 +70,18 @@ try {
 
         case 'tracklist':
             $row = Repository::album($id) ?? respond(['error' => 'Disco não encontrado.'], 404);
-            $tracks = (new Tracklist(DiscogsClient::fromSettings()))->fetch($row);
-            respond(['html' => View::partial('collections/tracklist', ['tracks' => $tracks, 'fetchedAt' => date('c')])]);
+            $r = (new Tracklist(DiscogsClient::fromSettings()))->fetch($row);
+            respond(['html' => View::partial('collections/tracklist', $r + ['fetchedAt' => date('c')])]);
+
+        case 'album_audio':
+            $row = Repository::album($id) ?? respond(['error' => 'Disco não encontrado.'], 404);
+            if (!empty($_GET['retry'])) {
+                DeezerClient::forget($id);
+                $row['deezer_id'] = null;
+            }
+            respond((new DeezerClient())->albumAudio($row) + [
+                'album' => ['title' => $row['title'], 'artist' => $row['artist'], 'cover' => $row['thumb'] ?: $row['cover']],
+            ]);
 
         case 'concerts_counts':
             respond(ConcertSync::counts());
@@ -80,6 +92,9 @@ try {
         case 'concerts_reset':
             ConcertSync::reset((string) ($_GET['scope'] ?? 'errors'));
             respond(ConcertSync::counts());
+
+        case 'concerts_bol':
+            respond((new ConcertSync())->importBol(new BolClient(), !empty($_GET['only'])));
 
         case 'concerts_area':
             $country = (string) ($_GET['country'] ?? '');

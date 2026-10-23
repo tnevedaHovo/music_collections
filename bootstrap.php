@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 define('APP_ROOT', __DIR__);
 define('APP_NAME', 'Música');
-define('APP_VERSION', '0.2.2');
+define('APP_VERSION', '0.5.0');
 define('USER_AGENT', 'MusicaPlatform/0.1 (+http://localhost/musica)');
 
 date_default_timezone_set('Europe/Lisbon');
